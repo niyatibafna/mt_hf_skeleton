@@ -322,6 +322,10 @@ def compute_metrics(pred):
     labels = tokenizer.batch_decode(labels, skip_special_tokens=True)
 
     # Compute BLEU
+    if sum([len(pred.split()) for pred in predictions]) == 0:
+        return {'bleu': 0.0, \
+                'brevity_penalty': 0, \
+                'length_ratio': 0, 'translation_length': 0, 'reference_length': 0}
     bleu_metric = bleu.compute(predictions = predictions, references = labels)
 
     # Remove precisions
