@@ -114,7 +114,7 @@ def evaluate_mt_bleu(DATAFILE_L1, DATAFILE_L2, tokenizer_inpath, model_inpath, S
         print("Loading from HF! ")
         tokenizer = AutoTokenizer.from_pretrained(tokenizer_inpath, model_max_length = 512)
     
-    tokenizer.decoder = decoders.WordPiece()
+    # tokenizer.decoder = decoders.WordPiece()
     # tokenizer = get_tokenizers.add_dialectid_tokens(tokenizer)
     device = torch.cuda.current_device() if torch.cuda.is_available() else -1
     print(f"Device: {device}")
@@ -140,7 +140,11 @@ def evaluate_mt_bleu(DATAFILE_L1, DATAFILE_L2, tokenizer_inpath, model_inpath, S
     for output in tqdm(pipe(KeyDataset(dataset, "source"), batch_size = 32, max_length = 512, truncation = True)):        
         for sent in output:
             token_ids = tokenizer.convert_tokens_to_ids(sent["translation_text"].split())
-            pred = tokenizer.decode(token_ids, skip_special_tokens = True)
+            pred = tokenizer.decode(token_ids, skip_special_tokens = True, clean_up_tokenization_spaces = True)
+
+            # Process the sentence to combine subwords
+            pred = pred.replace(" ##", "")
+
             print(f"Pred: {pred}")
             pred_sents.append(pred)
 
