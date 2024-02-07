@@ -438,34 +438,33 @@ def main(args):
     model_enc_dec.save_pretrained(args.OUTPUT_DIR)
 
     # # Get performance and labels on test set
-    # if test_dataset:
-    #     logging.info("STARTING EVALUATION")
-    #     test_results = trainer.predict(test_dataset)
-    #     test_metrics = test_results.metrics
-    #     predictions = test_results.predictions
-    #     labels = test_results.label_ids
+    if test_dataset:
+        logging.info("STARTING EVALUATION")
+        test_results = trainer.predict(test_dataset)
+        test_metrics = test_results.metrics
+        predictions = test_results.predictions
+        labels = test_results.label_ids 
+        labels = np.where(labels != -100, labels, tokenizer.pad_token_id)
 
-    #     # Decode into text
-    #     inputs = tokenizer.batch_decode(test_dataset["input_ids"], skip_special_tokens=True)
-    #     predictions = tokenizer.batch_decode(predictions, skip_special_tokens=True)
-    #     labels = tokenizer.batch_decode(labels, skip_special_tokens=True)
+        # Decode into text
+        inputs = tokenizer.batch_decode(test_dataset["input_ids"], skip_special_tokens=True)
+        predictions = tokenizer.batch_decode(predictions, skip_special_tokens=True)
+        labels = tokenizer.batch_decode(labels, skip_special_tokens=True)
 
-    #     # Log examples
-    #     logging.info("Logging examples...")
-    #     for i in range(len(predictions[:10])):
-    #         logging.info("Example {}: ".format(i))
-    #         logging.info("Input: {}".format(inputs[i]))
-    #         logging.info("Prediction: {}".format(predictions[i]))
-    #         logging.info("Label: {}".format(labels[i]))
-    #     # Log metrics
-    #     logging.info("Logging metrics...")
-    #     logging.info("Test metrics: {}".format(test_metrics))
+        # Log examples
+        logging.info("Logging examples...")
+        for i in range(len(predictions[:10])):
+            logging.info("Example {}: ".format(i))
+            logging.info("Input: {}".format(inputs[i]))
+            logging.info("Prediction: {}".format(predictions[i]))
+            logging.info("Label: {}".format(labels[i]))
+        # Log metrics
+        logging.info("Logging metrics...")
+        logging.info("Test metrics: {}".format(test_metrics))
 
 
-    #     # logging.info("DONE EVALUATION")
+        logging.info("DONE EVALUATION")
 
-    
-    # visualization_of_cross_attentions_and_pgen(input_ids, decoder_input_ids, model_outputs.cross_attentions, model_outputs.p_gen)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
