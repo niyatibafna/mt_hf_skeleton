@@ -232,6 +232,9 @@ def init_models(ENC_DEC_MODELPATH, tokenizer, PT_CKPT = None):
     model_enc_dec.config.decoder_start_token_id = tokenizer.cls_token_id
     model_enc_dec.config.pad_token_id = tokenizer.pad_token_id
 
+    model_size = sum(t.numel() for t in model_enc_dec.parameters())
+    print(f"Model size: {model_size/1000**2:.1f}M parameters")
+
     return model_enc_dec
 
 def get_dataset_split(DATAFILE_L1, DATAFILE_L2, max_lines, tokenizer, max_length = 512):
