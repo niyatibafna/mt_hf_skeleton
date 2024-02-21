@@ -118,7 +118,7 @@ def evaluate_mt_bleu(DATAFILE_L1, DATAFILE_L2, tokenizer_inpath, model_inpath, S
     # tokenizer = get_tokenizers.add_dialectid_tokens(tokenizer)
     device = torch.cuda.current_device() if torch.cuda.is_available() else -1
     print(f"Device: {device}")
-    pipe = pipeline("translation", model = model_inpath, tokenizer = tokenizer, max_length = 512, truncation = True, device=device)
+    pipe = pipeline("translation", model = model_inpath, tokenizer = tokenizer, truncation = True, device=device) # Not including max_length here
 
     # Save MT outputs
     # scores = {"bho":{}, "mag":{}}
@@ -137,7 +137,7 @@ def evaluate_mt_bleu(DATAFILE_L1, DATAFILE_L2, tokenizer_inpath, model_inpath, S
     
     true_sents = dataset["target"]
     pred_sents = list()
-    for output in tqdm(pipe(KeyDataset(dataset, "source"), batch_size = 32, max_length = 512, truncation = True)):        
+    for output in tqdm(pipe(KeyDataset(dataset, "source"), batch_size = 32, max_length = 40, truncation = True)): # max_length is the max length of the target sentence
         for sent in output:
             token_ids = tokenizer.convert_tokens_to_ids(sent["translation_text"].split())
             pred = tokenizer.decode(token_ids, skip_special_tokens = True, clean_up_tokenization_spaces = True)
