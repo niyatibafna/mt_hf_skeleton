@@ -411,12 +411,14 @@ def main(args):
     weight_decay=0.01,
     logging_dir=args.LOG_DIR,
     predict_with_generate=True,
+    generation_max_length=40, # defaults to model config max_length
     report_to="tensorboard",
-    logging_steps=100,
-    save_strategy="steps",
-    save_steps=2000, # For 15000 examples, this will save roughly every epoch with batch size 8
-    evaluation_strategy="steps",
-    eval_steps=100, 
+    evaluation_strategy="epoch",
+    logging_strategy="epoch",
+    save_strategy="epoch",
+    # eval_steps=2000, 
+    # logging_steps=2000,
+    # save_steps=2000, # For 15000 examples, this will save roughly every epoch with batch size 8
     load_best_model_at_end=True,
     save_total_limit=2
     )
