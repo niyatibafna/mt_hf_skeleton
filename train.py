@@ -177,21 +177,19 @@ class Seq2SeqTrainerTali(Seq2SeqTrainer):
         # # Save past state if it exists
 
 
-def init_tokenizer(TOKENIZER_INPATH, FILES):
+def init_tokenizer(TOKENIZER_INPATH, FILES = None, vocab_size = 16000):
     '''Note that if we are using a pretrained tokenizer,
     we should simply pass the HF key of the model as TOKENIZER_INPATH'''
 
     logging.info("Loading src tokenizer from {}".format(TOKENIZER_INPATH))
     tokenizer = get_tokenizer.train_or_load_tokenizer(TOKENIZER_INPATH,  \
-        FILES = FILES)
+        FILES = FILES, vocab_size = vocab_size)
     # Looks like HF MT doesn't support separate source and target tokenizers
     # logging.info("Loading tgt tokenizer from {}".format(TGT_TOKENIZER_INPATH))
     # tgt_tokenizer = get_tokenizer.train_or_load_tokenizer(TGT_TOKENIZER_INPATH, tokenizer)
 
     ### Optionally add language ID tokens
-    # tokenizer = get_tokenizer.add_langid_tokens(tokenizer, LANGS)
-
-    
+    # tokenizer = get_tokenizer.add_langid_tokens(tokenizer, LANGS)    
     return tokenizer
 
 def init_models(ENC_DEC_MODELPATH, tokenizer, PT_CKPT = None):
@@ -200,7 +198,7 @@ def init_models(ENC_DEC_MODELPATH, tokenizer, PT_CKPT = None):
     # Initialize Seq2Seq model, input and output tokenizer, special hyperparameters
     if PT_CKPT:
         # First we check if there is some enc-dec checkpoint (along with cross-attention weights)
-        logging.info("Loading encoder-decoder model from {}".format(PT_CKPT))
+        logging.info("Loading encoder-decoder model from existing local checkpoint {}".format(PT_CKPT))
         model_enc_dec = EncoderDecoderModelNew.from_pretrained(PT_CKPT)
     elif ENC_DEC_MODELPATH:
         # If not, we check if the encoder and decoder can be initalized separately from some model
@@ -278,7 +276,7 @@ def get_dataset_split(DATAFILE_L1, DATAFILE_L2, max_lines, tokenizer, max_length
     dataset = dataset.with_format("torch")
     return dataset
 
-def get_mt_dataset(DATADIR_L1, DATADIR_L2, max_lines, tokenizer, max_length = 512):
+def get_mt_dataset(DATADIR_L1, DATADIR_L2, max_lines, tokenizer, max_length = 512, only_eval = False):
 
     '''
     This function assumes that the datadir contains train, dev, and test splits, 
@@ -291,9 +289,15 @@ def get_mt_dataset(DATADIR_L1, DATADIR_L2, max_lines, tokenizer, max_length = 51
         DATAFILE_L2 = os.path.join(DATADIR_L2, split)
         return get_dataset_split(DATAFILE_L1, DATAFILE_L2, max_lines, tokenizer, max_length = max_length)
 
+    if only_eval:
+        test_dataset = get_split("test")
+        logging.info("Length of test dataset: {}".format(len(test_dataset)))
+        return test_dataset, test_dataset, test_dataset
+    
     train_dataset = get_split("train")
     dev_dataset = get_split("dev")
     test_dataset = get_split("test")
+
 
     ## Split dataset into train, dev, and test if no splits are provided
     # dataset = dataset.train_test_split(test_size=0.2, seed=SEED)
@@ -377,7 +381,9 @@ def main(args):
     logging.info("Getting datasets...")
     # Get dataset splits, and preprocess them
     train_dataset, dev_dataset, test_dataset = \
-    get_mt_dataset(args.DATADIR_L1, args.DATADIR_L2, max_lines=args.max_lines, tokenizer= tokenizer, max_length= args.max_length)
+    get_mt_dataset(args.DATADIR_L1, args.DATADIR_L2, max_lines=args.max_lines,\
+                    tokenizer= tokenizer, max_length= args.max_length,\
+                        only_eval = args.only_eval)
     
     # Instead of that, download some MT dataset from HF
     # tokenizer = AutoTokenizer.from_pretrained(args.ENC_DEC_MODELPATH)
@@ -435,12 +441,15 @@ def main(args):
     )   
 
     
-    logging.info("STARTING TRAINING")
-    logging.info(f"CUDA: {torch.cuda.is_available()}")
-    trainer.train(resume_from_checkpoint=args.resume_from_checkpoint)
+    if not args.only_eval:
+        # Check if CUDA is available
+        logging.info(f"CUDA available: {torch.cuda.is_available()}")
 
-    logging.info("SAVING MODEL")
-    model_enc_dec.save_pretrained(args.OUTPUT_DIR)
+        logging.info("STARTING TRAINING")
+        trainer.train(resume_from_checkpoint=args.resume_from_checkpoint)
+
+        logging.info("SAVING MODEL")
+        model_enc_dec.save_pretrained(args.OUTPUT_DIR)
 
     # # Get performance and labels on test set
     if test_dataset:
@@ -484,8 +493,9 @@ if __name__ == "__main__":
     parser.add_argument("--LOG_DIR", type=str, default="logs", help="Path to save tensorboard logs")
     parser.add_argument("--epochs", type=int, default = 20)
     parser.add_argument("--batch_size", type=int, default = 16)
-    parser.add_argument("--max_lines", type=int, default = INF)
+    parser.add_argument("--max_lines", type=int, default = INF, help="Maximum number of lines to load from dataset")
     parser.add_argument("--resume_from_checkpoint", action="store_true", default=False, help="Resume training from args.OUTPUT_DIR")
+    parser.add_argument("--only_eval", action="store_true", default=False, help="Only evaluate model")
     # Take any additional approach-related parameters
 
     args = parser.parse_args()
