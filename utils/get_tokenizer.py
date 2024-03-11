@@ -50,43 +50,47 @@ def load_tokenizer(TOKENIZER_PATH, fast = True):
 
     print(f"Loading tokenizer from {TOKENIZER_PATH}...")
     if fast:
-        # if TOKENIZER_PATH == "Shushant/nepaliBERT":
-        #     fast_tokenizer = AutoTokenizer.from_pretrained(TOKENIZER_PATH, model_max_length=512)
-        ### Looks like some tokenizers can't be loaded as fast, check for your tokenizer
-        fast_tokenizer = PreTrainedTokenizerFast.from_pretrained(TOKENIZER_PATH)
-        # There is the option to also specify model_max_length=512 - see if this is necessary
+        if os.path.exists(TOKENIZER_PATH):
+            # if TOKENIZER_PATH == "Shushant/nepaliBERT":
+            ### Looks like some tokenizers can't be loaded as fast, check for your tokenizer
+            print(f"Loading fast tokenizer from {TOKENIZER_PATH}...")
+            fast_tokenizer = PreTrainedTokenizerFast.from_pretrained(TOKENIZER_PATH)
+            # There is the option to also specify model_max_length=512 - see if this is necessary
 
-        fast_tokenizer.bos_token="<s>"
-        fast_tokenizer.eos_token="</s>"
-        fast_tokenizer.sep_token="[SEP]"
-        fast_tokenizer.cls_token="[CLS]"
-        fast_tokenizer.unk_token="[UNK]"
-        fast_tokenizer.pad_token="[PAD]"
-        fast_tokenizer.mask_token="[MASK]"
-                
-        # fast_tokenizer.bos_token_id=0
-        # fast_tokenizer.eos_token_id=2
-        # fast_tokenizer.sep_token_id=2
-        # fast_tokenizer.cls_token_id=0
-        # fast_tokenizer.unk_token_id=3
-        # fast_tokenizer.pad_token_id=1
-        # fast_tokenizer.mask_token_id=4
-                
-        fast_tokenizer._bos_token="<s>"
-        fast_tokenizer._eos_token="</s>"
-        fast_tokenizer._sep_token="[SEP]"
-        fast_tokenizer._cls_token="[CLS]"
-        fast_tokenizer._unk_token="[UNK]"
-        fast_tokenizer._pad_token="[PAD]"
-        fast_tokenizer._mask_token="[MASK]"
-                
-        # fast_tokenizer._bos_token_id=0
-        # fast_tokenizer._eos_token_id=2
-        # fast_tokenizer._sep_token_id=2
-        # fast_tokenizer._cls_token_id=0
-        # fast_tokenizer._unk_token_id=3
-        # fast_tokenizer._pad_token_id=1
-        # fast_tokenizer._mask_token_id=4
+            fast_tokenizer.bos_token="<s>"
+            fast_tokenizer.eos_token="</s>"
+            fast_tokenizer.sep_token="[SEP]"
+            fast_tokenizer.cls_token="[CLS]"
+            fast_tokenizer.unk_token="[UNK]"
+            fast_tokenizer.pad_token="[PAD]"
+            fast_tokenizer.mask_token="[MASK]"
+                    
+            # fast_tokenizer.bos_token_id=0
+            # fast_tokenizer.eos_token_id=2
+            # fast_tokenizer.sep_token_id=2
+            # fast_tokenizer.cls_token_id=0
+            # fast_tokenizer.unk_token_id=3
+            # fast_tokenizer.pad_token_id=1
+            # fast_tokenizer.mask_token_id=4
+                    
+            fast_tokenizer._bos_token="<s>"
+            fast_tokenizer._eos_token="</s>"
+            fast_tokenizer._sep_token="[SEP]"
+            fast_tokenizer._cls_token="[CLS]"
+            fast_tokenizer._unk_token="[UNK]"
+            fast_tokenizer._pad_token="[PAD]"
+            fast_tokenizer._mask_token="[MASK]"
+                    
+            # fast_tokenizer._bos_token_id=0
+            # fast_tokenizer._eos_token_id=2
+            # fast_tokenizer._sep_token_id=2
+            # fast_tokenizer._cls_token_id=0
+            # fast_tokenizer._unk_token_id=3
+            # fast_tokenizer._pad_token_id=1
+            # fast_tokenizer._mask_token_id=4
+        else:
+            print(f"Loading from HF {TOKENIZER_PATH}...")
+            fast_tokenizer = AutoTokenizer.from_pretrained(TOKENIZER_PATH, model_max_length=512)
 
         print("Done!")
 
