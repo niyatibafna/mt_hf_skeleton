@@ -15,8 +15,10 @@ from transformers import DataCollatorForTokenClassification
 from transformers import Trainer
 from transformers import TrainingArguments
 from transformers import BertForTokenClassification
+from transformers import AutoModelForCausalLM
 from transformers import pipeline
 from sklearn.metrics import precision_recall_fscore_support
+from torch.utils.data import DataLoader
 import evaluate
 from datasets import Dataset, load_dataset
 from transformers.pipelines.pt_utils import KeyDataset
@@ -91,12 +93,19 @@ def evaluate_pos(EXP_ID, eval_datapath, tokenizer_inpath,\
 
 
 
-def evaluate_mt_bleu(DATAFILE_L1, DATAFILE_L2, tokenizer_inpath, model_inpath, SEED = 42,  \
+def evaluate_mt_bleu(inputs_file, references_file, tokenizer_inpath, model_inpath, SEED = 42,  \
                     charbleu = False, \
-                    save_results = True, output_dir = None, \
+                    save_results = True, record_file = None,
+                    output_dir = None, \
                     EXP_ID = None):
     '''Runs evaluation for MT, also saves the results automatically in experiment records
-    eval_datapath: eval DIR to the MT parallel data'''
+    eval_datapath: eval DIR to the MT parallel data
+    Args:
+        inputs_file: Path to the source inputs
+        references_file: Path to the gold targets
+        tokenizer_inpath: Path to the tokenizer
+        model_inpath: Path to the model
+    '''
 
     print("Evaluating MT! ")
     if charbleu:
@@ -118,32 +127,32 @@ def evaluate_mt_bleu(DATAFILE_L1, DATAFILE_L2, tokenizer_inpath, model_inpath, S
     # tokenizer = get_tokenizers.add_dialectid_tokens(tokenizer)
     device = torch.cuda.current_device() if torch.cuda.is_available() else -1
     print(f"Device: {device}")
-    pipe = pipeline("translation", model = model_inpath, tokenizer = tokenizer, truncation = True, device=device) # Not including max_length here
-
-    # Save MT outputs
-    # scores = {"bho":{}, "mag":{}}
-    # for lang in ["bho", "mag"]:
+    pipe = pipeline("translation", model = model_inpath, tokenizer = tokenizer, \
+                    max_length = 40, truncation = True, device=device) 
+    # padding = True is the same as padding = "longest", 
+    # Check that padding strategy is the same as in training time!!!
+    # max_length is the maximum length of the output sequence
 
     print(f"Evaluating...")
     # hrl_sents, lrl_sents = \
         # eval_datareader.get_data_mt(eval_datapath, lang, SEED = SEED)
-    dataset = load_dataset("text", data_files={"source": [DATAFILE_L1], \
-            "target": [DATAFILE_L2]})
+    dataset = load_dataset("text", data_files={"source": [inputs_file], \
+            "target": [references_file]})
 
     # Create a new dataset that has source and target as columns
     dataset = Dataset.from_dict({"source": dataset["source"]["text"], "target": dataset["target"]["text"]})
     # Take only 1000 examples
-    dataset = dataset.select(range(500))
+    # dataset = dataset.select(range(100))
     
     true_sents = dataset["target"]
     pred_sents = list()
-    for output in tqdm(pipe(KeyDataset(dataset, "source"), batch_size = 32, max_length = 40, truncation = True)): # max_length is the max length of the target sentence
+    for output in tqdm(pipe(KeyDataset(dataset, "source"), batch_size = 32, max_length = 40, truncation = True)):        
         for sent in output:
             token_ids = tokenizer.convert_tokens_to_ids(sent["translation_text"].split())
             pred = tokenizer.decode(token_ids, skip_special_tokens = True, clean_up_tokenization_spaces = True)
 
             # Process the sentence to combine subwords
-            pred = pred.replace(" ##", "")
+            # pred = pred.replace(" ##", "")
 
             print(f"Pred: {pred}")
             pred_sents.append(pred)
@@ -166,8 +175,9 @@ def evaluate_mt_bleu(DATAFILE_L1, DATAFILE_L2, tokenizer_inpath, model_inpath, S
     
     # Find BLEU score
     bleu = evaluate.load("bleu")
-    bleu_score = bleu.compute(predictions=pred_sents, references=true_sents, max_order=max_order)
-    print(f"BLEU: {bleu_score}")
+    metric = bleu.compute(predictions=pred_sents, references=true_sents, max_order=max_order)
+    score = metric["bleu"]
+    print(f"BLEU: {score}")
     # scores[lang] = bleu_score
 
     
@@ -175,13 +185,18 @@ def evaluate_mt_bleu(DATAFILE_L1, DATAFILE_L2, tokenizer_inpath, model_inpath, S
     # with open(os.path.join(output_dir, "hin_sents.txt"), "w") as f:
     #     f.write("\n".join(hrl_sents))
 
-    # if save_results:
-    #     RECORD_FILE = "/home/nbafna/scratch/repos/large-language-models-for-related-dialects/evaluation/outputs/experiments_results_mt.json" \
-    #         if not charbleu else "/home/nbafna/scratch/repos/large-language-models-for-related-dialects/evaluation/outputs/experiments_results_mt_charbleu.json"
-    #     save_results_to_file(EXP_ID, DATAFILE_L1, scores, RECORD_FILE= RECORD_FILE)
+    if save_results:
+        if not record_file:
+            record_file = "/export/b08/nbafna1/projects/pgns-for-lrmt/output_analysis/results_bleu_scores.json" \
+            if not charbleu else "/home/nbafna/scratch/repos/large-language-models-for-related-dialects/evaluation/outputs/experiments_results_mt_charbleu.json"
+        save_results_to_file(EXP_ID, inputs_file, {"bleu":score}, RECORD_FILE= record_file)
 
 
-def evaluate_mt_bleu_from_file(EXP_ID, eval_datapath, translations_file, save_results = True, charbleu = False, SEED = 42):
+def evaluate_mt_bleu_from_file(references_file, predictions_file , \
+                               save_results = True, record_file = None,
+                               inputs_file = None, \
+                                charbleu = False, SEED = 42, \
+                                EXP_ID = None):
     '''Runs evaluation for MT if predictions (and true sents) are already saved in some file
     Also saves the results automatically in experiment records
     eval_datapath: eval DIR to the MT parallel data'''
@@ -195,9 +210,9 @@ def evaluate_mt_bleu_from_file(EXP_ID, eval_datapath, translations_file, save_re
     print("Char-level: {}, max order: {}".format(charbleu, max_order))
     #seq2seq Pipeline with model_inpath and tokenizer
     
-    with open(eval_datapath, "r") as f:
+    with open(references_file, "r") as f:
         true_sents = f.read().split("\n")
-    with open(translations_file, "r") as f:
+    with open(predictions_file, "r") as f:
         pred_sents = f.read().split("\n")
     
     true_sents = [[true_sent] for true_sent in true_sents]
@@ -210,23 +225,74 @@ def evaluate_mt_bleu_from_file(EXP_ID, eval_datapath, translations_file, save_re
         true_sents = [[" ".join(list(true_sent[0]))] for true_sent in true_sents]
     
     # Find BLEU score
+    # Find BLEU score
     bleu = evaluate.load("bleu")
-    scores = bleu.compute(predictions=pred_sents, references=true_sents, max_order=max_order)
-    print("Score: ", scores)
+    metric = bleu.compute(predictions=pred_sents, references=true_sents, max_order=max_order)
+    score = metric["bleu"]
+    print(f"BLEU: {score}")
 
-    # if save_results:
-    #     RECORD_FILE = "/home/nbafna/scratch/repos/large-language-models-for-related-dialects/evaluation/outputs/experiments_results_mt.json" \
-    #         if not charbleu else "/home/nbafna/scratch/repos/large-language-models-for-related-dialects/evaluation/outputs/experiments_results_mt_charbleu.json"
-    #     save_results_to_file(EXP_ID, eval_datapath, scores, RECORD_FILE= RECORD_FILE)
+    if save_results:
+        if not record_file:
+            record_file = "/export/b08/nbafna1/projects/pgns-for-lrmt/output_analysis/results_bleu_scores.json" \
+            if not charbleu else "/home/nbafna/scratch/repos/large-language-models-for-related-dialects/evaluation/outputs/experiments_results_mt_charbleu.json"
+        save_results_to_file(EXP_ID, inputs_file, {"bleu":score}, RECORD_FILE= record_file)
 
+def evaluate_perplexity(EXP_ID, input_file, tokenizer_inpath, model_inpath, output_dir = None, save_result = True):
+    '''Runs evaluation for perplexity, also saves the results automatically in experiment records'''
 
+    # Load the model
+    model = AutoModelForCausalLM.from_pretrained(model_inpath)
+
+    # Load the tokenizer
+    tokenizer = get_tokenizer.train_or_load_tokenizer(tokenizer_inpath)
+    tokenizer.pad_token = tokenizer.eos_token
+    tokenizer.model_max_length = 512
+
+    # Load the data
+    dataset = load_dataset("text", data_files={"test": input_file})
+
+    tokenized_datasets = dataset.map(lambda examples: tokenizer(examples["text"], truncation = True, padding=True, max_length=512), batched=True)
+
+    device = torch.cuda.current_device() if torch.cuda.is_available() else -1
+    data_loader = DataLoader(
+        tokenized_datasets["test"]["input_ids"],
+        collate_fn=lambda batch: {"input_ids": batch},
+        batch_size=8,
+        shuffle=False,  # Set to True if you want to shuffle batches
+    )
+    
+    print(f"CUDA available: {torch.cuda.is_available()}")
+    if torch.cuda.is_available():
+        model.to(device)
+
+   
+    nlls = list()
+    for batch in data_loader:
+        input_ids = batch["input_ids"]
+        if torch.cuda.is_available():
+            input_ids = input_ids.to(device)
+
+        # Calculate perplexity
+        with torch.no_grad():
+            outputs = model(input_ids, labels=input_ids)
+            loss = outputs.loss
+            nlls.append(loss.item())
+
+    perplexity = torch.exp(torch.tensor(nlls).mean()).item()
+
+    print(f"Perplexity on test set: {perplexity}")
+    if save_result:
+        RECORD_FILE = "/export/b08/nbafna1/projects/studying-model-performance-on-ood-syntax/perplexity_results.json"
+        save_results_to_file(EXP_ID, input_file, perplexity, RECORD_FILE= RECORD_FILE)
+    
+    
 
 def save_results_to_file(EXP_ID, eval_datapath, scores, RECORD_FILE = None):
     '''
     Hard code the outputs file path
     '''
     if not RECORD_FILE:
-        RECORD_FILE = "/home/nbafna/scratch/repos/large-language-models-for-related-dialects/evaluation/outputs/experiments_results_pos.json"
+        RECORD_FILE = "/export/b08/nbafna1/projects/pgns-for-lrmt/results_bleu_scores.json"
 
     if os.path.isfile(RECORD_FILE):
         with open(RECORD_FILE, "r") as f:
@@ -255,7 +321,6 @@ def save_results_to_file(EXP_ID, eval_datapath, scores, RECORD_FILE = None):
     with open(RECORD_FILE, "w") as f:
         json.dump(results, f, indent = 2)
 
-
 if __name__=="__main__":
     # print(PTLM_NAME)
     # eval_datapath = "../data/eval_POS/bho.nsurl.bis.conllu"
@@ -273,50 +338,41 @@ if __name__=="__main__":
     # Take the above arguments from argparse
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--DATAFILE_L1", type=str, required=True, help="Path to the eval data directory")
-    parser.add_argument("--DATAFILE_L2", type=str, required=True, help="Path to the eval data directory")
+    parser.add_argument("--inputs_file", type=str, required=True, help="Path to the eval data directory")
+    parser.add_argument("--references_file", type=str, default=None, help="Path to the eval data directory")
     parser.add_argument("--TOKENIZER_INPATH", type=str, default=None, help="Path to the tokenizer")
     parser.add_argument("--MODEL_INPATH", type=str, default=None, help="Path to the model")
     parser.add_argument("--EXP_ID", type=str, required=True, help="Experiment ID")
     parser.add_argument("--save_results", action="store_true", help="Save results to file")
+    parser.add_argument("--record_file", type=str, default=None, help="Path to the record file")
     parser.add_argument("--task", type=str, default="translation", help="Task to evaluate")
     parser.add_argument("--output_dir", type=str, default=None, help="Output directory to save the results")
     # Accept translated data from_file,
     parser.add_argument("--from_file", action="store_true", help="Evaluate from file")
-    parser.add_argument("--translations_file", type=str, default=None, help="Path to the transformed data")
-    
-
+    parser.add_argument("--predictions_file", type=str, default=None, help="Path to the transformed data")
 
     
     args = parser.parse_args()
     task = args.task
-    MODEL_INPATH = args.MODEL_INPATH
-    task = "translation"
-    MODEL_INPATH = None
 
     if task == "translation":
         if not args.from_file:
             print("Evaluating pipeline")
-            evaluate_mt_bleu(args.DATAFILE_L1, args.DATAFILE_L2, args.TOKENIZER_INPATH, args.MODEL_INPATH, SEED = 42,  \
+            evaluate_mt_bleu(args.inputs_file, args.references_file, args.TOKENIZER_INPATH, args.MODEL_INPATH, SEED = 42,  \
                     charbleu = False, \
-                        save_results = args.save_results, output_dir = args.output_dir, \
+                        save_results = args.save_results, record_file=args.record_file, \
+                        output_dir = args.output_dir, \
                         EXP_ID = args.EXP_ID)
         else:
             # Assume we evaluate from file
-            # n = 3
-            # temperature = 0.4
-            # alpha_clm = 0.75
-            # for lang in ["mag"]: #, "mag"]:
-            #     for temperature in [0.1, 0.2, 0.4, 0.8, 1]:
-                
-            #         EXP_ID = "hin_to_{}.n_{}.temperature_{}.alphaclm_{}".format(lang, n, temperature, alpha_clm)
-            #         eval_datapath = "../data/raw_parallel/loresmt/hi2{0}.test.{0}".format(lang)
-            #         transformed_datapath = "../data_transformation/outputs/{0}/hi2{0}.test.hi/hin_to_{0}.n_{1}.temperature_{2}.alphaclm_{3}.txt".format(lang, n, temperature, alpha_clm)
-                    # transformed_datapath =  "../data/raw_parallel/loresmt/hi2{0}.test.hi".format(lang)
             print("Evaluating from file")
             # evaluate_mt_bleu_from_file(args.EXP_ID, args.DATAPATH, args.transformed_datapath, save_results = args.save_results, charbleu = True)
-            evaluate_mt_bleu_from_file(args.DATAFILE_L1, args.DATAFILE_L2, args.TOKENIZER_INPATH, args.MODEL_INPATH, SEED = 42,  \
-                    charbleu = False, \
-                    save_results = args.save_results, translations_file = args.translations_file, \
-                        EXP_ID = args.EXP_ID)
+            evaluate_mt_bleu_from_file(references_file=args.references_file, predictions_file=args.predictions_file, \
+                                       save_results=args.save_results, record_file=args.record_file, \
+                                        charbleu=False, EXP_ID=args.EXP_ID, \
+                                    inputs_file=args.inputs_file)
+    elif task == "clm":
+        print("Evaluating CLM")
+        evaluate_perplexity(args.EXP_ID, args.inputs_file, args.TOKENIZER_INPATH, args.MODEL_INPATH, save_result = args.save_results)
+    
     # see_results()
